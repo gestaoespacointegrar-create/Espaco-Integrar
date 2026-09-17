@@ -380,12 +380,6 @@
   </div>
 </form>
 
-<!-- iFrame e Formulário Ocultos para Garantia Absoluta de Envio sem Bloqueio CORS -->
-<iframe name="gas_hidden_iframe" id="gas_hidden_iframe" style="display:none;"></iframe>
-<form id="gas_fallback_form" action="" method="POST" target="gas_hidden_iframe" style="display:none;">
-  <input type="hidden" name="payload" id="gas_payload_input">
-</form>
-
 <div class="action-bar">
   <div class="status-indicator">
     <div class="status-dot"></div>
@@ -398,10 +392,10 @@
 </div>
 
 <script>
-  // ATENÇÃO: COLE SUA URL DO GOOGLE APPS SCRIPT AQUI APÓS A REIMPLANTAÇÃO:
-  const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbw6i2ezdV6kKSGruoWTPplR0II5cI6275vnY4GN37IA19EIUKm6E-jJw6326rJCG2EEMQ/exec";
+  // COLE AQUI A SUA URL DO APPS SCRIPT PUBLICADO COMO NOVA VERSÃO:
+  const GAS_WEBAPP_URL = "SUA_URL_DO_GOOGLE_APPS_SCRIPT_AQUI";
 
-  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v10';
+  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v11';
   const form = document.getElementById('anamneseForm');
   const statusEl = document.getElementById('saveStatus');
 
@@ -505,7 +499,6 @@
     qrImg.src = `https://quickchart.io/qr?text=${encodeURIComponent(qrTargetUrl)}&size=120`;
     qrImg.style.display = 'block';
 
-    // Aguarda carregamento de imagens do relatório
     const imagensRelatorio = document.querySelectorAll('#pdfContent img');
     await Promise.all(Array.from(imagensRelatorio).map(img => {
       if (!img.src || img.src === '') return Promise.resolve();
@@ -521,8 +514,6 @@
     const fileName = `Anamnese_${nomeLimpo}_${hashUnico}.pdf`;
 
     const element = document.getElementById('pdfContent');
-    
-    // Otimização de Resolução e Compactação para evitar limite de upload
     const opt = {
       margin: [10, 10, 10, 10],
       filename: fileName,
@@ -531,57 +522,47 @@
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
     };
 
-    statusEl.textContent = "Gerando PDF...";
+    statusEl.textContent = "Gerando PDF localmente...";
     const pdfWorker = html2pdf().set(opt).from(element);
     
-    // Baixa o arquivo PDF localmente
+    // 1. Salva o PDF no dispositivo local
     pdfWorker.save();
 
     if (!GAS_WEBAPP_URL || !GAS_WEBAPP_URL.startsWith("https://script.google.com")) {
-      alert("Atenção: A URL do Google Apps Script precisa ser configurada na variável GAS_WEBAPP_URL no index.html.");
+      alert("Aviso: A URL do Google Apps Script precisa ser inserida no index.html");
       return;
     }
 
     try {
-      statusEl.textContent = "Transmitindo cópia segura para o Google Drive...";
+      statusEl.textContent = "Enviando cópia para a pasta privada do Drive...";
       const pdfBase64 = await pdfWorker.outputPdf('datauristring');
       
-      const payloadObj = {
-        filename: fileName,
-        fileData: pdfBase64.split(',')[1],
-        validationCode: hashUnico,
-        paciente: rawNome,
-        dataEmissao: dataFormatada
-      };
-      
-      const jsonString = JSON.stringify(payloadObj);
+      // Converte para FormData (formato nativo que contorna bloqueios de navegador)
+      const formData = new URLSearchParams();
+      formData.append('filename', fileName);
+      formData.append('fileData', pdfBase64.split(',')[1]);
+      formData.append('validationCode', hashUnico);
+      formData.append('paciente', rawNome);
+      formData.append('dataEmissao', dataFormatada);
 
-      // Envio via Fetch Principal
-      fetch(GAS_WEBAPP_URL, {
+      await fetch(GAS_WEBAPP_URL, {
         method: 'POST',
         mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: jsonString
-      }).catch(err => console.warn("Fetch omitido, disparando fallback form:", err));
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
+      });
 
-      // Envio Secundário via Formulário Oculto (Infalível contra bloqueios de navegadores)
-      const fallbackForm = document.getElementById('gas_fallback_form');
-      const payloadInput = document.getElementById('gas_payload_input');
-      fallbackForm.action = GAS_WEBAPP_URL;
-      payloadInput.value = jsonString;
-      fallbackForm.submit();
-
-      statusEl.textContent = "Cópia transmitida com sucesso para o Google Drive!";
+      statusEl.textContent = "Documento transmitido com sucesso para o Drive!";
       
       setTimeout(() => {
-        if (confirm("Documento baixado e cópia enviada ao Google Drive! Limpar dados para o próximo atendimento?")) {
+        if (confirm("PDF gerado e gravado na pasta privada do Drive! Deseja limpar a tela para o próximo paciente?")) {
           limparFormulario();
         }
-      }, 1200);
+      }, 1000);
 
     } catch (err) {
-      console.error("Erro na transmissão:", err);
-      statusEl.textContent = "PDF salvo localmente no computador.";
+      console.error("Erro no salvamento automático:", err);
+      statusEl.textContent = "PDF baixado apenas no dispositivo local.";
     }
   }
 </script>
