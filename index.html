@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ficha de Anamnese - Espaço Integrar</title>
+  <link id="appFavicon" rel="icon" type="image/png" href="logo.png">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <style>
+    :root {
+      --font-family: Arial, Helvetica, sans-serif;
+      --text-color: #2c3e50;
+      --border-color: #d1d9e6;
+      --bubble-bg: #f4f7fa;
+      --bubble-focus-bg: #ffffff;
+      --paper-bg: #ffffff;
+      --primary-color: #3b82f6;
+      --danger-color: #ef4444;
+      --shadow-bubble: 0 3px 8px rgba(0, 0, 0, 0.05);
+      --shadow-focus: 0 4px 12px rgba(59, 130, 246, 0.18);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-family); color: var(--text-color); background-color: #eef2f5; line-height: 1.5; padding: 20px 10px 90px 10px; }
+    .paper { max-width: 880px; margin: 0 auto; background: var(--paper-bg); padding: 40px 45px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); border-radius: 12px; }
+    
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 2px solid #f0f2f5; padding-bottom: 20px; }
+    .header-info { flex: 1; }
+    .header-title { font-size: 22px; font-weight: 800; color: #1e293b; margin-top: 8px; margin-bottom: 2px; }
+    .header-subtitle { font-size: 14px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .logo-container { width: 160px; margin-left: auto; display: flex; justify-content: flex-end; align-items: center; }
+    .logo-img { max-width: 100%; max-height: 100px; height: auto; object-fit: contain; }
+
+    .section { margin-bottom: 24px; background: #fafbfc; padding: 18px 20px; border-radius: 14px; border: 1px solid #f0f3f6; }
+    .section-title { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 12px; padding-bottom: 4px; border-bottom: 2px solid #e2e8f0; }
+    .form-row { display: flex; flex-wrap: wrap; align-items: center; margin-bottom: 10px; gap: 8px 12px; }
+    label { font-size: 13px; color: #334155; }
+    .bold-label { font-weight: 700; color: #1e293b; }
+
+    input[type="text"], input[type="date"], input[type="number"] {
+      border: 1px solid var(--border-color); background-color: var(--bubble-bg); border-radius: 20px;
+      font-family: inherit; font-size: 13px; padding: 7px 14px; outline: none; color: #0f172a; flex-grow: 1; min-width: 80px;
+      box-shadow: var(--shadow-bubble); transition: all 0.2s ease-in-out;
+    }
+    textarea {
+      width: 100%; border: 1px solid var(--border-color); background-color: var(--bubble-bg); border-radius: 16px;
+      font-family: inherit; font-size: 13px; padding: 10px 14px; outline: none; resize: vertical; min-height: 42px; line-height: 1.4;
+      display: block; margin-top: 4px; box-shadow: var(--shadow-bubble); transition: all 0.2s ease-in-out;
+    }
+    input[type="text"]:focus, input[type="date"]:focus, input[type="number"]:focus, textarea:focus {
+      border-color: var(--primary-color); background-color: var(--bubble-focus-bg); box-shadow: var(--shadow-focus); transform: translateY(-1px);
+    }
+    .checkbox-group {
+      display: inline-flex; align-items: center; gap: 6px; background-color: var(--bubble-bg); padding: 6px 14px;
+      border-radius: 20px; border: 1px solid var(--border-color); box-shadow: var(--shadow-bubble); cursor: pointer; font-size: 13px; user-select: none; transition: all 0.2s ease-in-out;
+    }
+    .checkbox-group:hover { background-color: #ffffff; border-color: #cbd5e1; transform: translateY(-1px); }
+    .checkbox-group input { accent-color: var(--primary-color); cursor: pointer; width: 15px; height: 15px; }
+    .bullet-list { list-style: none; padding-left: 0; }
+    .bullet-list li { margin-bottom: 10px; }
+
+    .action-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #ffffff; border-top: 1px solid #e2e8f0; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 -4px 15px rgba(0,0,0,0.06); z-index: 1000; }
+    .status-indicator { font-size: 13px; color: #64748b; display: flex; align-items: center; gap: 8px; font-weight: 500; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
+    
+    .btn-group { display: flex; gap: 10px; }
+    .btn { border: none; padding: 10px 20px; font-size: 14px; font-weight: 700; border-radius: 20px; cursor: pointer; transition: all 0.2s ease; }
+    .btn-export { background-color: var(--primary-color); color: white; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25); }
+    .btn-export:hover { background-color: #1d4ed8; }
+    .btn-clear { background-color: #f3f4f6; color: #4b5563; border: 1px solid #d1d5db; }
+    .btn-clear:hover { background-color: #fee2e2; color: var(--danger-color); border-color: #fca5a5; }
+
+    @media print {
+      body { background: white; padding: 0; }
+      .paper { box-shadow: none; padding: 0; max-width: 100%; }
+      .section { background: transparent; padding: 0; border: none; margin-bottom: 16px; }
+      .action-bar { display: none !important; }
+      input, textarea { border: none !important; background: transparent !important; box-shadow: none !important; border-bottom: 1px solid #ccc !important; border-radius: 0 !important; padding: 2px 0 !important; }
+      .checkbox-group { border: none !important; background: transparent !important; box-shadow: none !important; padding: 0 !important; }
+    }
+  </style>
+</head>
+<body>
+
+<form id="anamneseForm" autocomplete="off">
+  <div class="paper" id="pdfContent">
+    
+    <div class="header">
+      <div class="header-info">
+        <div class="form-row">
+          <label class="bold-label">Data:</label>
+          <input type="date" name="data_atendimento" style="max-width: 170px;">
+        </div>
+        <div class="header-title">Ficha de Anamnese</div>
+        <div class="header-subtitle">Documento Transdisciplinar</div>
+      </div>
+      <div class="logo-container">
+        <img id="appLogo" src="LOGO.png" alt="Espaço Integrar" class="logo-img">
+      </div>
+    </div>
+
+    <!-- Identificação -->
+    <div class="section">
+      <div class="form-row">
+        <label class="bold-label">Nome do paciente:</label>
+        <input type="text" name="nome_paciente" style="flex-grow: 3;">
+      </div>
+      <div class="form-row">
+        <label class="bold-label">Idade:</label>
+        <input type="text" name="idade_paciente" style="max-width: 70px;">
+        <label class="bold-label">Sexo:</label>
+        <label class="checkbox-group"><input type="radio" name="sexo" value="M"> M</label>
+        <label class="checkbox-group"><input type="radio" name="sexo" value="F"> F</label>
+        <label class="bold-label">Data de nascimento:</label>
+        <input type="text" name="data_nascimento" placeholder="DD/MM/AAAA" style="max-width: 130px;">
+      </div>
+      <div class="form-row">
+        <label class="bold-label">Escola/Creche:</label>
+        <input type="text" name="escola">
+        <label class="bold-label">Ano/Série:</label>
+        <input type="text" name="serie" style="max-width: 110px;">
+      </div>
+      <div class="form-row">
+        <label class="bold-label">Nome do(a) responsável:</label>
+        <input type="text" name="nome_responsavel">
+      </div>
+      <div class="form-row">
+        <label class="bold-label">Grau de parentesco:</label>
+        <input type="text" name="parentesco">
+      </div>
+      <div class="form-row">
+        <label class="bold-label">Telefone(s):</label>
+        <input type="text" name="telefones">
+        <label class="bold-label">Cidade:</label>
+        <input type="text" name="cidade">
+      </div>
+      <div class="form-row">
+        <label class="bold-label">Laudo HD / Diagnóstico:</label>
+        <input type="text" name="diagnostico">
+      </div>
+      <div class="form-row">
+        <label class="bold-label">Encaminhamento:</label>
+        <input type="text" name="encaminhamento">
+      </div>
+    </div>
+
+    <!-- 1. Dados Familiares -->
+    <div class="section">
+      <div class="section-title">1. Dados Familiares</div>
+      <ul class="bullet-list">
+        <li>
+          <div class="form-row"><label class="bold-label">• Nome do pai:</label><input type="text" name="nome_pai"></div>
+          <div class="form-row"><label class="bold-label">Profissão:</label><input type="text" name="profissao_pai"></div>
+        </li>
+        <li>
+          <div class="form-row"><label class="bold-label">• Nome da mãe:</label><input type="text" name="nome_mae"></div>
+          <div class="form-row"><label class="bold-label">Profissão:</label><input type="text" name="profissao_mae"></div>
+        </li>
+        <li>
+          <div class="form-row"><label class="bold-label">• Estado civil dos pais:</label><input type="text" name="estado_civil_pais"></div>
+        </li>
+        <li>
+          <label class="bold-label">• Pessoas que moram com a criança:</label>
+          <textarea name="pessoas_moram_com_crianca" rows="1"></textarea>
+        </li>
+        <li>
+          <label class="bold-label">• Irmãos: (nome e idade)</label>
+          <textarea name="irmaos_nome_idade" rows="1"></textarea>
+        </li>
+      </ul>
+    </div>
+
+    <!-- 2. Histórico Gestacional e de Parto -->
+    <div class="section">
+      <div class="section-title">2. Histórico Gestacional e de Parto</div>
+      <div class="form-row">
+        <label class="bold-label">A gestação foi planejada?</label>
+        <label class="checkbox-group"><input type="radio" name="gestacao_planejada" value="Sim"> Sim</label>
+        <label class="checkbox-group"><input type="radio" name="gestacao_planejada" value="Não"> Não</label>
+        <label class="bold-label">Idade da mãe na gestação:</label>
+        <input type="text" name="idade_mae_gestacao" style="max-width: 90px;">
+        <label class="bold-label">Realizou pré-natal?</label>
+        <label class="checkbox-group"><input type="radio" name="prenatal" value="Sim"> Sim</label>
+        <label class="checkbox-group"><input type="radio" name="prenatal" value="Não"> Não</label>
+      </div>
+      <div class="form-row">
+        <label class="bold-label">• Intercorrências na gestação:</label>
+        <textarea name="intercorrencias_gestacao" rows="2"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="bold-label">• Tipo de parto:</label>
+        <label class="checkbox-group"><input type="radio" name="tipo_parto" value="Normal"> Normal</label>
+        <label class="checkbox-group"><input type="radio" name="tipo_parto" value="Cesárea"> Cesárea</label>
+        <label class="checkbox-group"><input type="radio" name="tipo_parto" value="Fórceps"> Fórceps</label>
+      </div>
+      <div class="form-row">
+        <label class="bold-label">• Idade gestacional ao nascimento:</label>
+        <input type="text" name="idade_gestacional_nascimento" style="max-width: 90px;"> semanas
+        <label class="bold-label">Peso ao nascer:</label>
+        <input type="text" name="peso_nascer" style="max-width: 90px;"> g
+        <label class="bold-label">Apgar:</label>
+        <input type="text" name="apgar" style="max-width: 90px;">
+      </div>
+      <div class="form-row">
+        <label class="bold-label">• Complicações no parto ou logo após:</label>
+        <textarea name="complicacoes_parto" rows="2"></textarea>
+      </div>
+    </div>
+
+    <!-- 3. Desenvolvimento Global -->
+    <div class="section">
+      <div class="section-title">3. Desenvolvimento Global</div>
+      <div class="form-row">
+        <label>Sustentou a cabeça:</label> <input type="text" name="sustentou_cabeca" style="max-width: 70px;"> meses
+        <label>Sentou sem apoio:</label> <input type="text" name="sentou_sem_apoio" style="max-width: 70px;"> meses
+        <label>Andou com:</label> <input type="text" name="andou" style="max-width: 70px;"> meses
+      </div>
+      <div class="form-row">
+        <label class="bold-label">Desfraldou?</label>
+        <label class="checkbox-group"><input type="radio" name="desfraldou" value="Sim"> Sim</label>
+        <label class="checkbox-group"><input type="radio" name="desfraldou" value="Não"> Não</label>
+        <label class="bold-label">Toma banho sozinho?</label>
+        <label class="checkbox-group"><input type="radio" name="banho_sozinho" value="Sim"> Sim</label>
+        <label class="checkbox-group"><input type="radio" name="banho_sozinho" value="Não"> Não</label>
+      </div>
+      <div class="form-row">
+        <label class="bold-label">Outras observações motoras:</label>
+        <textarea name="obs_desenvolvimento_motor" rows="2"></textarea>
+      </div>
+    </div>
+
+    <!-- 4. Desenvolvimento da Linguagem -->
+    <div class="section">
+      <div class="section-title">4. Desenvolvimento da Linguagem</div>
+      <div class="form-row">
+        <label>Primeiras palavras com:</label> <input type="text" name="inicio_primeiras_palavras">
+        <label>Formação de frases:</label> <input type="text" name="inicio_formacao_frases">
+      </div>
+      <div class="form-row">
+        <label class="bold-label">• Comunicação atual:</label>
+        <label class="checkbox-group"><input type="radio" name="comunicacao_atual" value="Fala"> Fala</label>
+        <label class="checkbox-group"><input type="radio" name="comunicacao_atual" value="Gestos"> Gestos</label>
+        <label class="checkbox-group"><input type="radio" name="comunicacao_atual" value="Pouca comunicação"> Pouca comunicação</label>
+      </div>
+      <div class="form-row">
+        <label class="bold-label">• Queixas de fala/língua:</label>
+        <textarea name="queixas_fala_lingua" rows="2"></textarea>
+      </div>
+    </div>
+
+    <!-- 5. Rotina de Sono -->
+    <div class="section">
+      <div class="section-title">5. Rotina de Sono</div>
+      <div class="form-row">
+        <label class="bold-label">Horário que dorme:</label> <input type="text" name="horario_dorme" style="max-width: 120px;">
+        <label class="bold-label">Acorda:</label> <input type="text" name="horario_acorda" style="max-width: 120px;">
+        <label class="bold-label">Sono tranquilo?</label>
+        <label class="checkbox-group"><input type="radio" name="sono_tranquilo" value="Sim"> Sim</label>
+        <label class="checkbox-group"><input type="radio" name="sono_tranquilo" value="Não"> Não</label>
+      </div>
+    </div>
+
+    <!-- 6. Alimentação Inicial -->
+    <div class="section">
+      <div class="section-title">6. Alimentação Inicial</div>
+      <div class="form-row">
+        <label class="bold-label">• Aleitamento materno:</label>
+        <label class="checkbox-group"><input type="radio" name="aleitamento_materno" value="Sim"> Sim</label>
+        <label class="checkbox-group"><input type="radio" name="aleitamento_materno" value="Não"> Não</label>
+        <label class="bold-label">Introdução alimentar:</label>
+        <label class="checkbox-group"><input type="radio" name="introducao_alimentar" value="Adequada"> Adequada</label>
+        <label class="checkbox-group"><input type="radio" name="introducao_alimentar" value="Seletiva"> Seletiva</label>
+      </div>
+    </div>
+
+    <!-- 7. Saúde Geral -->
+    <div class="section">
+      <div class="section-title">7. Saúde Geral</div>
+      <div class="form-row">
+        <label class="bold-label">Alergias:</label>
+        <textarea name="alergias" rows="1"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="bold-label">• Uso atual de medicamentos:</label>
+        <textarea name="medicamentos_atuais" rows="1"></textarea>
+      </div>
+    </div>
+
+    <!-- 8. Escola e Comportamento -->
+    <div class="section">
+      <div class="section-title">8. Escola e Comportamento</div>
+      <div class="form-row">
+        <label class="bold-label">Adaptação escolar:</label>
+        <label class="checkbox-group"><input type="radio" name="adaptacao_escolar" value="Boa"> Boa</label>
+        <label class="checkbox-group"><input type="radio" name="adaptacao_escolar" value="Difícil"> Difícil</label>
+      </div>
+      <div class="form-row">
+        <label class="bold-label">Queixas dos professores:</label>
+        <textarea name="queixas_professores" rows="2"></textarea>
+      </div>
+    </div>
+
+    <!-- 9. Aspectos Emocionais e Sociais -->
+    <div class="section">
+      <div class="section-title">9. Aspectos Emocionais e Sociais</div>
+      <div class="form-row">
+        <label class="bold-label">Olha no olho ao ser chamado?</label>
+        <label class="checkbox-group"><input type="radio" name="olha_no_olho" value="Sim"> Sim</label>
+        <label class="checkbox-group"><input type="radio" name="olha_no_olho" value="Não"> Não</label>
+      </div>
+      <div class="form-row">
+        <label class="bold-label">• Reação a frustrações:</label>
+        <textarea name="reacao_frustracoes" rows="2"></textarea>
+      </div>
+    </div>
+
+    <!-- 10. Habilidades Cognitivas -->
+    <div class="section">
+      <div class="section-title">10. Habilidades Cognitivas</div>
+      <div class="form-row">
+        <label class="bold-label">Atenção, foco, organização e brincadeira simbólica:</label>
+        <textarea name="habilidades_cognitivas_descricao" rows="2"></textarea>
+      </div>
+    </div>
+
+    <!-- 11. Habilidades Pedagógicas -->
+    <div class="section">
+      <div class="section-title">11. Habilidades Pedagógicas</div>
+      <div class="form-row">
+        <label class="bold-label">Leitura, escrita, alfabetização e pega do lápis:</label>
+        <textarea name="habilidades_pedagogicas_descricao" rows="2"></textarea>
+      </div>
+    </div>
+
+    <!-- 12. Alimentação Atual -->
+    <div class="section">
+      <div class="section-title">12. Alimentação Atual</div>
+      <div class="form-row">
+        <label class="bold-label">Seletividade/Restrições alimentares:</label>
+        <textarea name="restricoes_seletividade" rows="2"></textarea>
+      </div>
+    </div>
+
+    <!-- 13. Expectativas da Família -->
+    <div class="section">
+      <div class="section-title">13. Expectativas da Família</div>
+      <div class="form-row">
+        <label class="bold-label">• Motivo principal da procura:</label>
+        <textarea name="motivo_procura_terapia" rows="2"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="bold-label">Observações adicionais do profissional:</label>
+        <textarea name="observacoes_adicionais_profissional" rows="2"></textarea>
+      </div>
+    </div>
+
+    <!-- Acompanhamento Global -->
+    <div class="section">
+      <div class="section-title">Acompanhamento Global</div>
+      <div class="form-row">
+        <label class="checkbox-group"><input type="checkbox" name="acomp_fono"> Fonoaudiologia</label>
+        <label class="checkbox-group"><input type="checkbox" name="acomp_psico"> Psicologia</label>
+        <label class="checkbox-group"><input type="checkbox" name="acomp_to"> Terapia Ocupacional</label>
+        <label class="checkbox-group"><input type="checkbox" name="acomp_neuro"> Neuropediatra</label>
+      </div>
+    </div>
+
+  </div>
+</form>
+
+<div class="action-bar">
+  <div class="status-indicator">
+    <div class="status-dot"></div>
+    <span id="saveStatus">Salvamento automático ativo</span>
+  </div>
+  <div class="btn-group">
+    <button class="btn btn-clear" type="button" onclick="limparFormulario()">Novo Paciente / Limpar</button>
+    <button class="btn btn-export" type="button" onclick="exportToPDF()">Exportar PDF e Salvar</button>
+  </div>
+</div>
+
+<script>
+  const LOGO_PATH = "logo.png"; 
+  
+  // COLE SUA URL DO GOOGLE APPS SCRIPT AQUI APÓS A IMPLANTAÇÃO:
+  const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbw6i2ezdV6kKSGruoWTPplR0II5cI6275vnY4GN37IA19EIUKm6E-jJw6326rJCG2EEMQ/exec";
+
+  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v3';
+  const form = document.getElementById('anamneseForm');
+  const statusEl = document.getElementById('saveStatus');
+
+  document.addEventListener("DOMContentLoaded", () => {
+    if (LOGO_PATH) {
+      document.getElementById('appFavicon').href = LOGO_PATH;
+      document.getElementById('appLogo').src = LOGO_PATH;
+    }
+    loadFormData();
+    setInterval(saveFormData, 10000);
+  });
+
+  function saveFormData() {
+    const formData = new FormData(form);
+    const data = {};
+    for (let [key, value] of formData.entries()) {
+      if (data[key]) {
+        if (!Array.isArray(data[key])) data[key] = [data[key]];
+        data[key].push(value);
+      } else {
+        data[key] = value;
+      }
+    }
+    localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(data));
+    const now = new Date();
+    statusEl.textContent = `Rascunho salvo às ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  function loadFormData() {
+    const saved = localStorage.getItem(FORM_STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const data = JSON.parse(saved);
+      Object.keys(data).forEach(key => {
+        const field = form.elements[key];
+        if (!field) return;
+        const val = data[key];
+        if (field instanceof NodeList || Array.isArray(field)) {
+          field.forEach(element => {
+            if (element.type === 'checkbox' || element.type === 'radio') {
+              element.checked = Array.isArray(val) ? val.includes(element.value) : element.value === val;
+            }
+          });
+        } else if (field.type === 'checkbox') {
+          field.checked = Boolean(val);
+        } else {
+          field.value = val;
+        }
+      });
+    } catch (e) { 
+      console.error('Erro ao restaurar rascunho:', e); 
+    }
+  }
+
+  function limparFormulario() {
+    if (confirm("Deseja limpar todos os dados da tela para proteger a privacidade do paciente anterior?")) {
+      localStorage.removeItem(FORM_STORAGE_KEY);
+      form.reset();
+      statusEl.textContent = "Sessão limpa com segurança.";
+    }
+  }
+
+  async function exportToPDF() {
+    saveFormData();
+    
+    // Sanitização de nome para evitar caracteres inválidos e injeção de caminho
+    const rawNome = form.elements['nome_paciente']?.value || 'Paciente_Sem_Nome';
+    const nomeLimpo = rawNome.trim().replace(/[^a-zA-Z0-9_ -]/g, "").replace(/\s+/g, '_');
+    const fileName = `Anamnese_${nomeLimpo}_${Date.now()}.pdf`;
+
+    const element = document.getElementById('pdfContent');
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename: fileName,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    statusEl.textContent = "Gerando PDF...";
+    const pdfWorker = html2pdf().set(opt).from(element);
+    
+    // Baixa o arquivo PDF localmente
+    pdfWorker.save();
+
+    // Envio seguro para o Google Drive
+    if (GAS_WEBAPP_URL && GAS_WEBAPP_URL.startsWith("https://script.google.com")) {
+      try {
+        statusEl.textContent = "Enviando com segurança ao Google Drive...";
+        const pdfBase64 = await pdfWorker.outputPdf('datauristring');
+        
+        await fetch(GAS_WEBAPP_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: fileName,
+            fileData: pdfBase64.split(',')[1]
+          })
+        });
+
+        statusEl.textContent = "PDF salvo no Google Drive com sucesso!";
+        
+        // Limpeza LGPD automática
+        setTimeout(() => {
+          if (confirm("Documento salvo! Deseja limpar os dados da tela para o próximo atendimento?")) {
+            limparFormulario();
+          }
+        }, 1000);
+
+      } catch (err) {
+        console.error("Erro no envio ao Drive:", err);
+        statusEl.textContent = "Erro ao enviar para o Drive. Verifique a conexão.";
+      }
+    }
+  }
+</script>
+</body>
+</html>
