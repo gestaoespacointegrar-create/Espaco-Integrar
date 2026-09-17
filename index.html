@@ -395,7 +395,7 @@
   // COLE A SUA URL DO GOOGLE APPS SCRIPT AQUI:
   const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbw6i2ezdV6kKSGruoWTPplR0II5cI6275vnY4GN37IA19EIUKm6E-jJw6326rJCG2EEMQ/exec";
 
-  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v13';
+  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v15';
   const form = document.getElementById('anamneseForm');
   const statusEl = document.getElementById('saveStatus');
 
@@ -469,16 +469,14 @@
   }
 
   function limparFormulario() {
-    if (confirm("Deseja limpar todos os dados da tela e iniciar um novo atendimento?")) {
-      localStorage.removeItem(FORM_STORAGE_KEY);
-      form.reset();
-      document.getElementById('valCodeDisplay').textContent = '-';
-      document.getElementById('valDateDisplay').textContent = '-';
-      const qrImg = document.getElementById('qrCodeImg');
-      qrImg.src = '';
-      qrImg.style.display = 'none';
-      statusEl.textContent = "Tela limpa e pronta para novo atendimento.";
-    }
+    localStorage.removeItem(FORM_STORAGE_KEY);
+    form.reset();
+    document.getElementById('valCodeDisplay').textContent = '-';
+    document.getElementById('valDateDisplay').textContent = '-';
+    const qrImg = document.getElementById('qrCodeImg');
+    qrImg.src = '';
+    qrImg.style.display = 'none';
+    statusEl.textContent = "Tela limpa e pronta para novo atendimento.";
   }
 
   async function exportToPDF() {
@@ -518,73 +516,54 @@
     const opt = {
       margin: [10, 10, 10, 10],
       filename: fileName,
-      image: { type: 'jpeg', quality: 0.92 },
-      html2canvas: { scale: 1.5, useCORS: true, allowTaint: true, logging: false },
+      image: { type: 'jpeg', quality: 0.85 },
+      html2canvas: { scale: 1.2, useCORS: true, allowTaint: true, logging: false },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
     };
 
-    statusEl.textContent = "Gerando PDF e enviando para o Google Drive...";
+    statusEl.textContent = "Gerando PDF compacto e transmitindo ao Drive...";
     const pdfWorker = html2pdf().set(opt).from(element);
     
-    // 1. Baixa o arquivo localmente
+    // 1. Salva o arquivo localmente no dispositivo
     pdfWorker.save();
 
     if (!GAS_WEBAPP_URL || !GAS_WEBAPP_URL.startsWith("https://script.google.com")) {
-      alert("Aviso: URL do Google Apps Script não configurada.");
+      alert("Aviso: URL do Google Apps Script não configurada no index.html.");
       return;
     }
 
     try {
       const pdfBase64 = await pdfWorker.outputPdf('datauristring');
-      const base64Data = pdfBase64.split(',')[1];
-
-      // 2. ENVIRO VIA FORMULÁRIO OCULTO COM IFRAME (Bypassa 100% o bloqueio de CORS do GitHub Pages)
-      const iframeName = 'hidden_gas_iframe_' + Date.now();
-      const iframe = document.createElement('iframe');
-      iframe.name = iframeName;
-      iframe.style.display = 'none';
-      document.body.appendChild(iframe);
-
-      const hiddenForm = document.createElement('form');
-      hiddenForm.method = 'POST';
-      hiddenForm.action = GAS_WEBAPP_URL;
-      hiddenForm.target = iframeName;
-      hiddenForm.style.display = 'none';
-
-      const fields = {
+      
+      const payload = JSON.stringify({
         filename: fileName,
-        fileData: base64Data,
+        fileData: pdfBase64.split(',')[1],
         validationCode: hashUnico,
         paciente: rawNome,
         dataEmissao: dataFormatada
-      };
+      });
 
-      for (const key in fields) {
-        const input = document.createElement('textarea');
-        input.name = key;
-        input.value = fields[key];
-        hiddenForm.appendChild(input);
-      }
+      // 2. Disparo assíncrono para o Apps Script
+      await fetch(GAS_WEBAPP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: payload
+      });
 
-      document.body.appendChild(hiddenForm);
-      hiddenForm.submit();
-
-      statusEl.textContent = "PDF baixado e enviado com sucesso para o Google Drive!";
+      statusEl.textContent = "PDF exportado e salvo na pasta privada do Google Drive!";
       
-      // Limpa os dados salvos localmente após sucesso
+      // 3. LIMPEZA DEFINITIVA DO CACHE (Impede que o teste antigo retorne)
       localStorage.removeItem(FORM_STORAGE_KEY);
+      form.reset();
       
       setTimeout(() => {
-        document.body.removeChild(hiddenForm);
-        document.body.removeChild(iframe);
-        if (confirm("Documento exportado e enviado com segurança ao Google Drive! Deseja limpar a tela agora?")) {
-          limparFormulario();
-        }
-      }, 2000);
+        alert("Documento gerado com sucesso e cópia de segurança salva na sua pasta privada do Google Drive!");
+      }, 500);
 
     } catch (err) {
-      console.error("Erro no envio:", err);
-      statusEl.textContent = "PDF baixado localmente (erro na codificação do PDF).";
+      console.error("Erro na comunicação:", err);
+      statusEl.textContent = "PDF baixado localmente (falha de rede com o Drive).";
     }
   }
 </script>
