@@ -3,9 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://quickchart.io; connect-src 'self'; frame-src https://script.google.com https://*.googleusercontent.com; form-action https://script.google.com;">
   <title>Ficha de Anamnese - Espaço Integrar</title>
   <link id="appFavicon" rel="icon" type="image/png" href="logo.png">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     :root {
       --font-family: Arial, Helvetica, sans-serif;
@@ -69,6 +70,8 @@
     .btn-export:hover { background-color: #1d4ed8; }
     .btn-clear { background-color: #f3f4f6; color: #4b5563; border: 1px solid #d1d5db; }
     .btn-clear:hover { background-color: #fee2e2; color: var(--danger-color); border-color: #fca5a5; }
+    .pdf-field-value { flex: 1 1 120px; min-height: 19px; padding: 2px 0; white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: 1px solid #cbd5e1; color: #0f172a; }
+    .credential-input { width: 150px; border: 1px solid var(--border-color); background: var(--bubble-bg); border-radius: 16px; padding: 8px 11px; font: inherit; font-size: 12px; }
 
     @media print {
       body { background: white; padding: 0; }
@@ -386,187 +389,285 @@
     <span id="saveStatus">Salvamento automático ativo</span>
   </div>
   <div class="btn-group">
+    <input id="professionalId" class="credential-input" type="text" placeholder="Identificador profissional" autocomplete="username">
+    <input id="professionalPassword" class="credential-input" type="password" placeholder="Senha de acesso" autocomplete="current-password">
     <button class="btn btn-clear" type="button" onclick="limparFormulario()">Novo Paciente / Limpar</button>
     <button class="btn btn-export" type="button" onclick="exportToPDF()">Exportar PDF e Salvar</button>
   </div>
 </div>
 
 <script>
-  // COLE A SUA URL DO GOOGLE APPS SCRIPT AQUI:
-  const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxuRMNt3GvXLNs8RgQjFQz-yNFhO4Nqd6a66_dJRY8-ZgkKJV1ydPXcNV6byKioOU40/exec";
+  /* CONFIGURAÇÃO OBRIGATÓRIA: substitua o valor antes de publicar. */
+  const GAS_WEBAPP_URL = "COLE_AQUI_A_URL_DE_PRODUCAO_DO_APPS_SCRIPT_EXEC";
 
-  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v16';
+  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v18';
+  const LEGACY_FORM_STORAGE_KEYS = ['anamnese_espaco_integrar_v17'];
+  const DRAFT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
+  const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+  const MAX_ENCODED_REQUEST_BYTES = 10 * 1024 * 1024;
   const form = document.getElementById('anamneseForm');
   const statusEl = document.getElementById('saveStatus');
+  let autosaveTimer;
+  let isDirty = false;
+  let isExporting = false;
 
-  document.addEventListener("DOMContentLoaded", () => {
+  document.addEventListener('DOMContentLoaded', () => {
     carregarLogoLocal();
     loadFormData();
-    setInterval(saveFormData, 10000);
+    autosaveTimer = window.setInterval(saveFormData, 10000);
+    form.addEventListener('input', () => { isDirty = true; });
+    form.addEventListener('change', () => { isDirty = true; });
+    window.addEventListener('pagehide', () => { if (isDirty && !isExporting) saveFormData(); });
   });
 
   async function carregarLogoLocal() {
     const appLogo = document.getElementById('appLogo');
     const appFavicon = document.getElementById('appFavicon');
-    const nomes = ['logo.png', 'LOGO.png', 'Logo.png', 'logo.PNG', 'LOGO.PNG', 'logo.jpeg'];
-
-    for (const n of nomes) {
+    for (const nome of ['logo.png', 'LOGO.png', 'Logo.png', 'logo.PNG', 'LOGO.PNG', 'logo.jpeg']) {
       try {
-        const resp = await fetch(n);
-        if (resp.ok) {
-          const blob = await resp.blob();
-          const base64 = await new Promise((res) => {
-            const r = new FileReader();
-            r.onloadend = () => res(r.result);
-            r.readAsDataURL(blob);
-          });
-          appLogo.src = base64;
-          if (appFavicon) appFavicon.href = base64;
-          return;
-        }
-      } catch (e) {}
+        const resposta = await fetch(nome, { cache: 'no-store' });
+        if (!resposta.ok) continue;
+        const base64 = await blobParaDataUrl(await resposta.blob());
+        appLogo.src = base64;
+        if (appFavicon) appFavicon.href = base64;
+        return;
+      } catch (_) { /* tenta o próximo nome */ }
     }
+  }
+
+  function coletarFormulario() {
+    const dados = {};
+    for (const [chave, valor] of new FormData(form).entries()) {
+      if (Object.prototype.hasOwnProperty.call(dados, chave)) {
+        dados[chave] = Array.isArray(dados[chave]) ? dados[chave] : [dados[chave]];
+        dados[chave].push(valor);
+      } else dados[chave] = valor;
+    }
+    return dados;
   }
 
   function saveFormData() {
-    const formData = new FormData(form);
-    const data = {};
-    for (let [key, value] of formData.entries()) {
-      if (data[key]) {
-        if (!Array.isArray(data[key])) data[key] = [data[key]];
-        data[key].push(value);
-      } else {
-        data[key] = value;
-      }
+    if (!isDirty || isExporting) return;
+    try {
+      localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify({ savedAt: Date.now(), data: coletarFormulario() }));
+      statusEl.textContent = `Rascunho salvo às ${new Date().toLocaleTimeString('pt-BR')}.`;
+    } catch (erro) {
+      console.error('Não foi possível salvar o rascunho:', erro);
+      statusEl.textContent = 'Rascunho não salvo neste navegador. Exporte o PDF para não perder dados.';
     }
-    localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(data));
   }
 
   function loadFormData() {
-    const saved = localStorage.getItem(FORM_STORAGE_KEY);
-    if (!saved) return;
+    const salvo = localStorage.getItem(FORM_STORAGE_KEY);
+    if (!salvo) return;
     try {
-      const data = JSON.parse(saved);
-      Object.keys(data).forEach(key => {
-        const field = form.elements[key];
-        if (!field) return;
-        const val = data[key];
-        if (field instanceof NodeList || Array.isArray(field)) {
-          field.forEach(element => {
-            if (element.type === 'checkbox' || element.type === 'radio') {
-              element.checked = Array.isArray(val) ? val.includes(element.value) : element.value === val;
-            }
+      const conteudo = JSON.parse(salvo);
+      if (conteudo.savedAt && Date.now() - conteudo.savedAt > DRAFT_MAX_AGE_MS) {
+        localStorage.removeItem(FORM_STORAGE_KEY);
+        return;
+      }
+      const dados = conteudo.data || conteudo; // compatibilidade com rascunho antigo
+      Object.keys(dados).forEach(chave => {
+        const campo = form.elements[chave];
+        if (!campo) return;
+        const valor = dados[chave];
+        if (campo instanceof RadioNodeList || campo instanceof NodeList) {
+          campo.forEach(item => {
+            if (item.type === 'checkbox' || item.type === 'radio') item.checked = Array.isArray(valor) ? valor.includes(item.value) : item.value === valor;
           });
-        } else if (field.type === 'checkbox') {
-          field.checked = Boolean(val);
-        } else {
-          field.value = val;
-        }
+        } else if (campo.type === 'checkbox') {
+          campo.checked = Boolean(valor);
+        } else campo.value = valor;
       });
-    } catch (e) { 
-      console.error('Erro ao restaurar rascunho:', e); 
+      isDirty = false;
+      statusEl.textContent = 'Rascunho restaurado neste dispositivo.';
+    } catch (erro) {
+      console.error('Erro ao restaurar rascunho:', erro);
+      localStorage.removeItem(FORM_STORAGE_KEY);
     }
   }
 
   function limparFormulario() {
+    if (!confirm('Limpar o formulário e apagar o rascunho deste navegador?')) return;
+    limparRascunhoERedefinir();
+    statusEl.textContent = 'Tela limpa e pronta para novo atendimento.';
+  }
+
+  function limparRascunhoERedefinir() {
     localStorage.removeItem(FORM_STORAGE_KEY);
+    LEGACY_FORM_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
     form.reset();
+    isDirty = false;
     document.getElementById('valCodeDisplay').textContent = '-';
     document.getElementById('valDateDisplay').textContent = '-';
     const qrImg = document.getElementById('qrCodeImg');
-    qrImg.src = '';
+    qrImg.removeAttribute('src');
     qrImg.style.display = 'none';
-    statusEl.textContent = "Tela limpa e pronta para novo atendimento.";
+  }
+
+  function validarConfiguracao() {
+    try {
+      const url = new URL(GAS_WEBAPP_URL);
+      return url.protocol === 'https:' && url.hostname === 'script.google.com' && /\/exec$/.test(url.pathname);
+    } catch (_) { return false; }
   }
 
   async function exportToPDF() {
-    const rawNome = form.elements['nome_paciente']?.value;
-    if (!rawNome || rawNome.trim() === "") {
-      alert("Por favor, preencha o 'Nome do paciente' antes de exportar.");
-      form.elements['nome_paciente']?.focus();
+    const rawNome = form.elements.nome_paciente?.value?.trim();
+    if (!rawNome) {
+      alert("Preencha o campo 'Nome do paciente' antes de gerar o PDF.");
+      form.elements.nome_paciente?.focus();
+      return;
+    }
+    if (isExporting) return;
+    if (!validarConfiguracao()) {
+      alert('Configure a URL /exec do Apps Script antes de publicar.');
+      return;
+    }
+    const professionalId = document.getElementById('professionalId').value.trim();
+    const professionalPassword = document.getElementById('professionalPassword').value;
+    if (!professionalId || !professionalPassword) {
+      alert('Informe o identificador e a senha profissional antes de gerar o PDF.');
       return;
     }
 
-    const now = new Date();
-    const hashUnico = 'EI-' + Date.now().toString(36).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
-    const dataFormatada = now.toLocaleString('pt-BR');
-
-    document.getElementById('valCodeDisplay').textContent = hashUnico;
-    document.getElementById('valDateDisplay').textContent = dataFormatada;
-
-    const qrImg = document.getElementById('qrCodeImg');
-    const qrTargetUrl = `https://drive.google.com/drive/folders/1DUPoKjPi-a7XwDENBsPba2NMF6s9O9H2?val=${hashUnico}`;
-    qrImg.src = `https://quickchart.io/qr?text=${encodeURIComponent(qrTargetUrl)}&size=120`;
-    qrImg.style.display = 'block';
-
-    const imagensRelatorio = document.querySelectorAll('#pdfContent img');
-    await Promise.all(Array.from(imagensRelatorio).map(img => {
-      if (!img.src || img.src === '') return Promise.resolve();
-      if (img.complete && img.naturalWidth !== 0) return Promise.resolve();
-      return new Promise(resolve => {
-        img.onload = resolve;
-        img.onerror = resolve;
-      });
-    }));
-
-    const nomeLimpo = rawNome.trim().replace(/[^a-zA-Z0-9_ -]/g, "").replace(/\s+/g, '_');
-    const fileName = `Anamnese_${nomeLimpo}_${hashUnico}.pdf`;
-
-    const element = document.getElementById('pdfContent');
-    const opt = {
-      margin: [10, 10, 10, 10],
-      filename: fileName,
-      image: { type: 'jpeg', quality: 0.85 },
-      html2canvas: { scale: 1.2, useCORS: true, allowTaint: true, logging: false },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
-    };
-
-    statusEl.textContent = "Gerando PDF compacto e transmitindo ao Drive...";
-    const pdfWorker = html2pdf().set(opt).from(element);
-    
-    // 1. Salva localmente no dispositivo
-    pdfWorker.save();
-
-    if (!GAS_WEBAPP_URL || !GAS_WEBAPP_URL.startsWith("https://script.google.com")) {
-      alert("Aviso: URL do Google Apps Script não configurada no index.html.");
-      return;
-    }
-
+    isExporting = true;
+    let pdfCreated = false;
+    let pdfDownloaded = false;
+    let pdfBlob = null;
+    let tamanhoPdf = 0;
+    window.clearInterval(autosaveTimer);
+    const botao = document.querySelector('.btn-export');
+    botao.disabled = true;
     try {
-      const pdfBase64 = await pdfWorker.outputPdf('datauristring');
-      const base64Data = pdfBase64.split(',')[1];
+      const documentId = `EI-${randomHex(16).toUpperCase()}`;
+      const dataFormatada = new Date().toLocaleString('pt-BR');
+      document.getElementById('valCodeDisplay').textContent = documentId;
+      document.getElementById('valDateDisplay').textContent = dataFormatada;
 
-      // 2. ENVIO VIA URLSearchParams (application/x-www-form-urlencoded)
-      // Garantido para passar pelo 302 redirect sem perder dados do payload no no-cors
-      const formData = new URLSearchParams();
-      formData.append('filename', fileName);
-      formData.append('fileData', base64Data);
-      formData.append('validationCode', hashUnico);
-      formData.append('paciente', rawNome);
-      formData.append('dataEmissao', dataFormatada);
+      const qrImg = document.getElementById('qrCodeImg');
+      qrImg.crossOrigin = 'anonymous';
+      qrImg.src = `https://quickchart.io/qr?text=${encodeURIComponent(`${GAS_WEBAPP_URL}?doc=${documentId}`)}&size=120`;
+      qrImg.style.display = 'block';
+      await aguardarImagem(qrImg, 10000);
 
-      await fetch(GAS_WEBAPP_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString()
-      });
+      statusEl.textContent = 'Gerando PDF...';
+      const fileName = `Anamnese_${documentId}.pdf`;
+      const opcoes = {
+        margin: [10, 10, 10, 10],
+        image: { type: 'jpeg', quality: 0.85 },
+        pagebreak: { mode: ['css', 'legacy', 'avoid-all'], avoid: ['.section', 'li', '.form-row'] },
+        html2canvas: { scale: 1.1, useCORS: true, allowTaint: false, logging: false, imageTimeout: 10000, onclone: prepararClonePdf },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
+      };
+      statusEl.textContent = 'Montando o PDF no navegador...';
+      pdfBlob = await html2pdf().set(opcoes).from(document.getElementById('pdfContent')).outputPdf('blob');
+      if (!(pdfBlob instanceof Blob) || pdfBlob.size === 0) throw new Error('A biblioteca não retornou um arquivo PDF válido. O formulário foi mantido.');
+      pdfCreated = true;
+      tamanhoPdf = pdfBlob.size;
+      statusEl.textContent = `PDF gerado: ${formatarBytes(tamanhoPdf)}. Preparando o download...`;
+      baixarBlob(pdfBlob, fileName);
+      pdfDownloaded = true;
 
-      statusEl.textContent = "PDF exportado e salvo na pasta privada do Google Drive!";
-      
-      // 3. LIMPEZA TOTAL E IMEDIATA DO RASCUNHO E DO FORMULÁRIO
-      localStorage.removeItem(FORM_STORAGE_KEY);
-      form.reset();
-      
-      setTimeout(() => {
-        alert("Documento gerado com sucesso e salvo na sua pasta privada do Google Drive!");
-      }, 500);
+      // Regra documental solicitada: PDF gerado/baixado => apagar imediatamente o rascunho.
+      limparRascunhoERedefinir();
 
-    } catch (err) {
-      console.error("Erro na comunicação:", err);
-      statusEl.textContent = "PDF baixado localmente (falha de rede com o Drive).";
+      if (tamanhoPdf > MAX_UPLOAD_BYTES) throw new Error(`PDF com ${formatarBytes(tamanhoPdf)} excede o limite de ${formatarBytes(MAX_UPLOAD_BYTES)}. Foi baixado e o formulário foi limpo; envie o arquivo por um canal autorizado da clínica.`);
+
+      statusEl.textContent = 'PDF baixado. Enviando cópia protegida ao Drive...';
+      const camposUpload = {
+        filename: fileName,
+        fileData: await blobParaBase64(pdfBlob),
+        documentId,
+        professionalId,
+        professionalPassword,
+        parentOrigin: window.location.origin
+      };
+      const corpoCodificado = new URLSearchParams({ ...camposUpload, requestId: '0'.repeat(32), messageToken: '0'.repeat(32) }).toString();
+      const tamanhoEnvio = new TextEncoder().encode(corpoCodificado).length;
+      if (tamanhoEnvio > MAX_ENCODED_REQUEST_BYTES) throw new Error(`O envio codificado teria ${formatarBytes(tamanhoEnvio)} e ultrapassaria o limite de ${formatarBytes(MAX_ENCODED_REQUEST_BYTES)}. O PDF local foi preservado.`);
+      statusEl.textContent = `PDF ${formatarBytes(tamanhoPdf)}; envio ${formatarBytes(tamanhoEnvio)}. Aguardando confirmação do Drive...`;
+      const resposta = await enviarPdfPorIframe(camposUpload);
+      if (!resposta.ok) throw new Error(resposta.error || 'O Drive recusou o documento.');
+      statusEl.textContent = resposta.warning
+        ? `PDF salvo no Drive (${formatarBytes(resposta.bytes || tamanhoPdf)}), mas a auditoria precisa de verificação.`
+        : `PDF confirmado no Drive (${formatarBytes(resposta.bytes || tamanhoPdf)}). Registro: ${resposta.fileId || 'confirmado'}.`;
+      alert(resposta.warning ? 'PDF salvo no Drive. Verifique o log de auditoria.' : 'Documento gerado, rascunho apagado e cópia confirmada no Drive.');
+    } catch (erro) {
+      console.error('Falha na exportação/envio:', erro);
+      if (!pdfCreated) {
+        statusEl.textContent = `Não foi possível gerar o PDF; os dados do formulário foram mantidos. ${erro.message}`;
+        alert(`Não foi possível gerar o PDF e o formulário continua preenchido para evitar perda de dados. ${erro.message}`);
+      } else if (!pdfDownloaded) {
+        statusEl.textContent = `PDF gerado (${formatarBytes(tamanhoPdf)}), mas o download falhou; formulário mantido. ${erro.message}`;
+        alert(`O PDF foi gerado, mas não foi possível iniciar o download. O formulário foi mantido. ${erro.message}`);
+      } else {
+        statusEl.textContent = `PDF ${formatarBytes(tamanhoPdf)} baixado; rascunho apagado; Drive não confirmado: ${erro.message}`;
+        alert(`O PDF foi baixado e o rascunho apagado, mas o Drive não confirmou o recebimento. ${erro.message}`);
+      }
+    } finally {
+      isExporting = false;
+      document.getElementById('professionalPassword').value = '';
+      botao.disabled = false;
+      autosaveTimer = window.setInterval(saveFormData, 10000);
     }
   }
+
+  function prepararClonePdf(documentoClonado) {
+    documentoClonado.querySelectorAll('textarea, input[type="text"], input[type="date"], input[type="number"]').forEach(campo => {
+      const texto = documentoClonado.createElement('div');
+      texto.className = 'pdf-field-value';
+      texto.textContent = campo.value || ' ';
+      campo.replaceWith(texto);
+    });
+  }
+
+  function enviarPdfPorIframe(dados) {
+    return new Promise((resolve, reject) => {
+      const requestId = randomHex(16);
+      const messageToken = randomHex(16);
+      const frameName = `gasUpload_${requestId}`;
+      const iframe = document.createElement('iframe');
+      iframe.name = frameName;
+      iframe.hidden = true;
+      document.body.appendChild(iframe);
+      const postForm = document.createElement('form');
+      postForm.method = 'POST';
+      postForm.action = GAS_WEBAPP_URL;
+      postForm.target = frameName;
+      postForm.hidden = true;
+      Object.entries({ ...dados, requestId, messageToken }).forEach(([nome, valor]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = nome; input.value = valor;
+        postForm.appendChild(input);
+      });
+      document.body.appendChild(postForm);
+      const limpar = () => { window.removeEventListener('message', receber); iframe.remove(); postForm.remove(); };
+      const timeout = window.setTimeout(() => { limpar(); reject(new Error('Tempo esgotado aguardando confirmação do Drive.')); }, 60000);
+      const receber = evento => {
+        if (!origemAppsScript(evento.origin)) return;
+        const resposta = typeof evento.data === 'string' ? tentarJson(evento.data) : evento.data;
+        if (!resposta || resposta.requestId !== requestId || resposta.messageToken !== messageToken) return;
+        window.clearTimeout(timeout); limpar(); resolve(resposta);
+      };
+      window.addEventListener('message', receber);
+      postForm.submit();
+    });
+  }
+
+  function origemAppsScript(origem) {
+    try {
+      const host = new URL(origem).hostname;
+      return host === 'script.google.com' || host === 'script.googleusercontent.com' || host.endsWith('.googleusercontent.com');
+    } catch (_) { return false; }
+  }
+  function tentarJson(valor) { try { return JSON.parse(valor); } catch (_) { return null; } }
+  function randomHex(bytes) { const valores = new Uint8Array(bytes); crypto.getRandomValues(valores); return [...valores].map(v => v.toString(16).padStart(2, '0')).join(''); }
+  function formatarBytes(bytes) { return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(bytes / (1024 * 1024)) + ' MB'; }
+  function baixarBlob(blob, nome) { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = nome; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  function blobParaDataUrl(blob) { return new Promise((resolve, reject) => { const leitor = new FileReader(); leitor.onerror = () => reject(leitor.error); leitor.onload = () => resolve(leitor.result); leitor.readAsDataURL(blob); }); }
+  async function blobParaBase64(blob) { return (await blobParaDataUrl(blob)).split(',')[1]; }
+  function aguardarImagem(img, timeout) { if (img.complete && img.naturalWidth) return Promise.resolve(); return new Promise(resolve => { const fim = () => { img.onload = null; img.onerror = null; resolve(); }; img.onload = fim; img.onerror = fim; window.setTimeout(fim, timeout); }); }
 </script>
 </body>
 </html>
