@@ -95,7 +95,7 @@
         <div class="header-subtitle">Documento Transdisciplinar</div>
       </div>
       <div class="logo-container">
-        <img id="appLogo" src="logo.png" alt="Espaço Integrar" class="logo-img" onerror="tratarErroLogo(this)">
+        <img id="appLogo" src="logo.png" alt="Espaço Integrar" class="logo-img" crossorigin="anonymous">
       </div>
     </div>
 
@@ -373,7 +373,7 @@
         Data de Emissão: <span id="valDateDisplay">-</span>
       </div>
       <div>
-        <img id="qrCodeImg" src="" alt="QR Code" style="width: 65px; height: 65px; display: none; object-fit: contain;">
+        <img id="qrCodeImg" src="" alt="QR Code" style="width: 65px; height: 65px; display: none; object-fit: contain;" crossorigin="anonymous">
       </div>
     </div>
 
@@ -392,51 +392,42 @@
 </div>
 
 <script>
-  // INSIRA A URL DO SEU GOOGLE APPS SCRIPT AQUI:
-  const GAS_WEBAPP_URL = "SUA_URL_DO_GOOGLE_APPS_SCRIPT_AQUI";
+  // SUBSTiTUA PELA SUA URL REAL DO GOOGLE APPS SCRIPT:
+  const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbw6i2ezdV6kKSGruoWTPplR0II5cI6275vnY4GN37IA19EIUKm6E-jJw6326rJCG2EEMQ/exec";
 
-  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v7';
+  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v8';
   const form = document.getElementById('anamneseForm');
   const statusEl = document.getElementById('saveStatus');
 
-  const NATIVE_LOGO_NAMES = ['logo.png', 'LOGO.png', 'Logo.png', 'logo.PNG', 'LOGO.PNG', 'logo.jpeg', 'logo.jpg'];
-  let logoAttemptIndex = 0;
-
-  function tratarErroLogo(img) {
-    logoAttemptIndex++;
-    if (logoAttemptIndex < NATIVE_LOGO_NAMES.length) {
-      img.src = NATIVE_LOGO_NAMES[logoAttemptIndex];
-    } else {
-      console.warn('Imagem da logo não foi encontrada no repositório.');
-    }
-  }
-
-  // Converte a logo em Base64 no momento de gerar o PDF para garantir captura do html2canvas
-  function ensureLogoBase64() {
-    const img = document.getElementById('appLogo');
-    if (!img || !img.complete || img.naturalWidth === 0) return;
-    if (img.src.startsWith('data:image')) return;
-
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const base64 = canvas.toDataURL('image/png');
-      img.src = base64;
-      
-      const favicon = document.getElementById('appFavicon');
-      if (favicon) favicon.href = base64;
-    } catch (e) {
-      console.warn('Não foi possível converter logo para Base64:', e);
-    }
-  }
-
   document.addEventListener("DOMContentLoaded", () => {
+    carregarLogoLocal();
     loadFormData();
     setInterval(saveFormData, 10000);
   });
+
+  // Tenta carregar a imagem testando variações de nome de arquivo para Linux/GitHub Pages
+  async function carregarLogoLocal() {
+    const appLogo = document.getElementById('appLogo');
+    const appFavicon = document.getElementById('appFavicon');
+    const nomes = ['logo.png', 'LOGO.png', 'Logo.png', 'logo.PNG', 'LOGO.PNG', 'logo.jpeg'];
+
+    for (const n of nomes) {
+      try {
+        const resp = await fetch(n);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          const base64 = await new Promise((res) => {
+            const r = new FileReader();
+            r.onloadend = () => res(r.result);
+            r.readAsDataURL(blob);
+          });
+          appLogo.src = base64;
+          if (appFavicon) appFavicon.href = base64;
+          return;
+        }
+      } catch (e) {}
+    }
+  }
 
   function saveFormData() {
     const formData = new FormData(form);
@@ -496,9 +487,6 @@
   async function exportToPDF() {
     saveFormData();
 
-    // 1. Converte a logo em Base64 na memória antes de capturar a tela
-    ensureLogoBase64();
-
     const now = new Date();
     const hashUnico = 'EI-' + Date.now().toString(36).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
     const dataFormatada = now.toLocaleString('pt-BR');
@@ -506,13 +494,13 @@
     document.getElementById('valCodeDisplay').textContent = hashUnico;
     document.getElementById('valDateDisplay').textContent = dataFormatada;
 
-    // 2. Renderiza o QR Code via API assíncrona
+    // QR Code assíncrono via QuickChart
     const qrImg = document.getElementById('qrCodeImg');
     const qrTargetUrl = `https://drive.google.com/drive/folders/1DUPoKjPi-a7XwDENBsPba2NMF6s9O9H2?val=${hashUnico}`;
     qrImg.src = `https://quickchart.io/qr?text=${encodeURIComponent(qrTargetUrl)}&size=120`;
     qrImg.style.display = 'block';
 
-    // 3. Aguarda o carregamento completo de todas as imagens (Logo e QR Code)
+    // Aguarda o carregamento de TODAS as imagens do relatório (Logo + QR Code)
     const imagensRelatorio = document.querySelectorAll('#pdfContent img');
     await Promise.all(Array.from(imagensRelatorio).map(img => {
       if (!img.src || img.src === '') return Promise.resolve();
@@ -532,7 +520,7 @@
       margin: [10, 10, 10, 10],
       filename: fileName,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
+      html2canvas: { scale: 2, useCORS: true, allowTaint: false, logging: false },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
@@ -542,38 +530,42 @@
     // Baixa o arquivo PDF localmente
     pdfWorker.save();
 
-    if (GAS_WEBAPP_URL && GAS_WEBAPP_URL.startsWith("https://script.google.com")) {
-      try {
-        statusEl.textContent = "Enviando cópia de segurança para o Google Drive...";
-        const pdfBase64 = await pdfWorker.outputPdf('datauristring');
-        
-        const payload = JSON.stringify({
-          filename: fileName,
-          fileData: pdfBase64.split(',')[1],
-          validationCode: hashUnico,
-          paciente: rawNome,
-          dataEmissao: dataFormatada
-        });
+    // Verificação estrita da URL do Google Apps Script
+    if (!GAS_WEBAPP_URL || !GAS_WEBAPP_URL.startsWith("https://script.google.com")) {
+      alert("Aviso: A URL do Google Apps Script não foi configurada no arquivo HTML. O PDF foi apenas baixado localmente.");
+      return;
+    }
 
-        await fetch(GAS_WEBAPP_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: payload
-        });
+    try {
+      statusEl.textContent = "Enviando cópia de segurança para o Google Drive...";
+      const pdfBase64 = await pdfWorker.outputPdf('datauristring');
+      
+      const payload = JSON.stringify({
+        filename: fileName,
+        fileData: pdfBase64.split(',')[1],
+        validationCode: hashUnico,
+        paciente: rawNome,
+        dataEmissao: dataFormatada
+      });
 
-        statusEl.textContent = "PDF gerado e enviado ao Google Drive com sucesso!";
-        
-        setTimeout(() => {
-          if (confirm("Documento exportado e enviado ao Google Drive! Deseja limpar a tela para o próximo atendimento?")) {
-            limparFormulario();
-          }
-        }, 1000);
+      await fetch(GAS_WEBAPP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: payload
+      });
 
-      } catch (err) {
-        console.error("Erro no envio:", err);
-        statusEl.textContent = "PDF baixado localmente.";
-      }
+      statusEl.textContent = "PDF gerado e enviado ao Google Drive!";
+      
+      setTimeout(() => {
+        if (confirm("Documento exportado e enviado ao Google Drive! Deseja limpar a tela para o próximo atendimento?")) {
+          limparFormulario();
+        }
+      }, 1000);
+
+    } catch (err) {
+      console.error("Erro no envio:", err);
+      statusEl.textContent = "PDF baixado localmente.";
     }
   }
 </script>
