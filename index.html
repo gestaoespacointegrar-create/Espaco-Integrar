@@ -395,7 +395,7 @@
   // COLE A SUA URL DO GOOGLE APPS SCRIPT AQUI:
   const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbw6i2ezdV6kKSGruoWTPplR0II5cI6275vnY4GN37IA19EIUKm6E-jJw6326rJCG2EEMQ/exec";
 
-  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v15';
+  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v16';
   const form = document.getElementById('anamneseForm');
   const statusEl = document.getElementById('saveStatus');
 
@@ -524,7 +524,7 @@
     statusEl.textContent = "Gerando PDF compacto e transmitindo ao Drive...";
     const pdfWorker = html2pdf().set(opt).from(element);
     
-    // 1. Salva o arquivo localmente no dispositivo
+    // 1. Salva localmente no dispositivo
     pdfWorker.save();
 
     if (!GAS_WEBAPP_URL || !GAS_WEBAPP_URL.startsWith("https://script.google.com")) {
@@ -534,31 +534,32 @@
 
     try {
       const pdfBase64 = await pdfWorker.outputPdf('datauristring');
-      
-      const payload = JSON.stringify({
-        filename: fileName,
-        fileData: pdfBase64.split(',')[1],
-        validationCode: hashUnico,
-        paciente: rawNome,
-        dataEmissao: dataFormatada
-      });
+      const base64Data = pdfBase64.split(',')[1];
 
-      // 2. Disparo assíncrono para o Apps Script
+      // 2. ENVIO VIA URLSearchParams (application/x-www-form-urlencoded)
+      // Garantido para passar pelo 302 redirect sem perder dados do payload no no-cors
+      const formData = new URLSearchParams();
+      formData.append('filename', fileName);
+      formData.append('fileData', base64Data);
+      formData.append('validationCode', hashUnico);
+      formData.append('paciente', rawNome);
+      formData.append('dataEmissao', dataFormatada);
+
       await fetch(GAS_WEBAPP_URL, {
         method: 'POST',
         mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: payload
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
       });
 
       statusEl.textContent = "PDF exportado e salvo na pasta privada do Google Drive!";
       
-      // 3. LIMPEZA DEFINITIVA DO CACHE (Impede que o teste antigo retorne)
+      // 3. LIMPEZA TOTAL E IMEDIATA DO RASCUNHO E DO FORMULÁRIO
       localStorage.removeItem(FORM_STORAGE_KEY);
       form.reset();
       
       setTimeout(() => {
-        alert("Documento gerado com sucesso e cópia de segurança salva na sua pasta privada do Google Drive!");
+        alert("Documento gerado com sucesso e salvo na sua pasta privada do Google Drive!");
       }, 500);
 
     } catch (err) {
