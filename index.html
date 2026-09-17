@@ -392,10 +392,10 @@
 </div>
 
 <script>
-  // COLE AQUI A SUA URL DO APPS SCRIPT PUBLICADO COMO NOVA VERSÃO:
+  // COLE AQUI A SUA URL DO GOOGLE APPS SCRIPT:
   const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbw6i2ezdV6kKSGruoWTPplR0II5cI6275vnY4GN37IA19EIUKm6E-jJw6326rJCG2EEMQ/exec";
 
-  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v11';
+  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v12';
   const form = document.getElementById('anamneseForm');
   const statusEl = document.getElementById('saveStatus');
 
@@ -440,8 +440,6 @@
       }
     }
     localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(data));
-    const now = new Date();
-    statusEl.textContent = `Rascunho salvo às ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   }
 
   function loadFormData() {
@@ -471,7 +469,7 @@
   }
 
   function limparFormulario() {
-    if (confirm("Deseja limpar a tela para o próximo atendimento?")) {
+    if (confirm("Deseja limpar todos os dados da tela e iniciar um novo atendimento?")) {
       localStorage.removeItem(FORM_STORAGE_KEY);
       form.reset();
       document.getElementById('valCodeDisplay').textContent = '-';
@@ -479,12 +477,17 @@
       const qrImg = document.getElementById('qrCodeImg');
       qrImg.src = '';
       qrImg.style.display = 'none';
-      statusEl.textContent = "Sessão limpa.";
+      statusEl.textContent = "Tela limpa e pronta para novo atendimento.";
     }
   }
 
   async function exportToPDF() {
-    saveFormData();
+    const rawNome = form.elements['nome_paciente']?.value;
+    if (!rawNome || rawNome.trim() === "") {
+      alert("Por favor, preencha ao menos o 'Nome do paciente' antes de exportar.");
+      form.elements['nome_paciente']?.focus();
+      return;
+    }
 
     const now = new Date();
     const hashUnico = 'EI-' + Date.now().toString(36).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
@@ -509,7 +512,6 @@
       });
     }));
 
-    const rawNome = form.elements['nome_paciente']?.value || 'Paciente_Sem_Nome';
     const nomeLimpo = rawNome.trim().replace(/[^a-zA-Z0-9_ -]/g, "").replace(/\s+/g, '_');
     const fileName = `Anamnese_${nomeLimpo}_${hashUnico}.pdf`;
 
@@ -517,52 +519,55 @@
     const opt = {
       margin: [10, 10, 10, 10],
       filename: fileName,
-      image: { type: 'jpeg', quality: 0.95 },
+      image: { type: 'jpeg', quality: 0.92 },
       html2canvas: { scale: 1.5, useCORS: true, allowTaint: true, logging: false },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
     };
 
-    statusEl.textContent = "Gerando PDF localmente...";
+    statusEl.textContent = "Gerando PDF e enviando para o Drive...";
     const pdfWorker = html2pdf().set(opt).from(element);
     
-    // 1. Salva o PDF no dispositivo local
+    // Baixa o arquivo localmente
     pdfWorker.save();
 
     if (!GAS_WEBAPP_URL || !GAS_WEBAPP_URL.startsWith("https://script.google.com")) {
-      alert("Aviso: A URL do Google Apps Script precisa ser inserida no index.html");
+      alert("Aviso: URL do Google Apps Script não configurada.");
       return;
     }
 
     try {
-      statusEl.textContent = "Enviando cópia para a pasta privada do Drive...";
       const pdfBase64 = await pdfWorker.outputPdf('datauristring');
       
-      // Converte para FormData (formato nativo que contorna bloqueios de navegador)
-      const formData = new URLSearchParams();
-      formData.append('filename', fileName);
-      formData.append('fileData', pdfBase64.split(',')[1]);
-      formData.append('validationCode', hashUnico);
-      formData.append('paciente', rawNome);
-      formData.append('dataEmissao', dataFormatada);
+      const payload = JSON.stringify({
+        filename: fileName,
+        fileData: pdfBase64.split(',')[1],
+        validationCode: hashUnico,
+        paciente: rawNome,
+        dataEmissao: dataFormatada
+      });
 
+      // Disparo via fetch com text/plain (garante entrega no doPost)
       await fetch(GAS_WEBAPP_URL, {
         method: 'POST',
         mode: 'no-cors',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString()
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: payload
       });
 
-      statusEl.textContent = "Documento transmitido com sucesso para o Drive!";
+      statusEl.textContent = "PDF baixado e salvo no Google Drive com sucesso!";
+      
+      // Limpa o rascunho salvo para evitar que teste antigo volte ao reabrir
+      localStorage.removeItem(FORM_STORAGE_KEY);
       
       setTimeout(() => {
-        if (confirm("PDF gerado e gravado na pasta privada do Drive! Deseja limpar a tela para o próximo paciente?")) {
+        if (confirm("Documento salvo e enviado com sucesso ao Google Drive! Deseja limpar a tela agora?")) {
           limparFormulario();
         }
       }, 1000);
 
     } catch (err) {
-      console.error("Erro no salvamento automático:", err);
-      statusEl.textContent = "PDF baixado apenas no dispositivo local.";
+      console.error("Erro no envio:", err);
+      statusEl.textContent = "PDF baixado localmente (falha de rede com o Drive).";
     }
   }
 </script>
