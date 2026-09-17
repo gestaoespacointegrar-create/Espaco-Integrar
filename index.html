@@ -391,6 +391,8 @@
   <div class="btn-group">
     <input id="professionalId" class="credential-input" type="text" placeholder="Identificador profissional" autocomplete="username">
     <input id="professionalPassword" class="credential-input" type="password" placeholder="Senha de acesso" autocomplete="current-password">
+    <input id="retryPdfFile" type="file" accept="application/pdf,.pdf" hidden onchange="reenviarPdfSelecionado(event)">
+    <button class="btn btn-clear" type="button" onclick="selecionarPdfParaReenvio()">Reenviar PDF baixado</button>
     <button class="btn btn-clear" type="button" onclick="limparFormulario()">Novo Paciente / Limpar</button>
     <button class="btn btn-export" type="button" onclick="exportToPDF()">Exportar PDF e Salvar</button>
   </div>
@@ -398,7 +400,7 @@
 
 <script>
   /* CONFIGURAÇÃO OBRIGATÓRIA: substitua o valor antes de publicar. */
-  const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxuRMNt3GvXLNs8RgQjFQz-yNFhO4Nqd6a66_dJRY8-ZgkKJV1ydPXcNV6byKioOU40/exec";
+  const GAS_WEBAPP_URL = "COLE_AQUI_A_URL_DE_PRODUCAO_DO_APPS_SCRIPT_EXEC";
 
   const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v18';
   const LEGACY_FORM_STORAGE_KEYS = ['anamnese_espaco_integrar_v17'];
@@ -512,6 +514,77 @@
     } catch (_) { return false; }
   }
 
+  function validarOrigemHospedada() {
+    return window.location.protocol === 'https:' && window.location.origin !== 'null';
+  }
+
+  function selecionarPdfParaReenvio() {
+    if (!validarOrigemHospedada()) {
+      alert('Abra o formulário pelo endereço HTTPS publicado no GitHub Pages. O arquivo aberto como file:/// não consegue confirmar a origem ao Apps Script.');
+      return;
+    }
+    document.getElementById('retryPdfFile').click();
+  }
+
+  async function reenviarPdfSelecionado(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!validarOrigemHospedada() || !validarConfiguracao()) {
+      alert('Abra a versão HTTPS publicada do GitHub Pages e confirme a URL /exec do Apps Script.');
+      return;
+    }
+    const match = file.name.match(/^Anamnese_(EI-[A-F0-9]{32})\.pdf$/i);
+    if (!match) {
+      alert('Selecione o PDF original baixado pelo formulário. O nome precisa seguir Anamnese_EI-....pdf.');
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      alert(`O PDF tem ${formatarBytes(file.size)}; o limite para envio é ${formatarBytes(MAX_UPLOAD_BYTES)}.`);
+      return;
+    }
+    const professionalId = document.getElementById('professionalId').value.trim();
+    const professionalPassword = document.getElementById('professionalPassword').value;
+    if (!professionalId || !professionalPassword) {
+      alert('Informe seu identificador e senha profissional para reenviar o PDF.');
+      return;
+    }
+    const botao = document.querySelector('.btn-export');
+    if (isExporting) return;
+    isExporting = true;
+    botao.disabled = true;
+    try {
+      const dataUrl = await blobParaDataUrl(file);
+      const fileData = dataUrl.split(',')[1];
+      const signature = atob(fileData.slice(0, 12));
+      if (!signature.startsWith('%PDF-')) throw new Error('O arquivo selecionado não contém a assinatura esperada de PDF.');
+      const camposUpload = {
+        filename: file.name,
+        fileData,
+        documentId: match[1].toUpperCase(),
+        professionalId,
+        professionalPassword,
+        parentOrigin: window.location.origin
+      };
+      const corpoCodificado = new URLSearchParams({ ...camposUpload, requestId: '0'.repeat(32), messageToken: '0'.repeat(32) }).toString();
+      const tamanhoEnvio = new TextEncoder().encode(corpoCodificado).length;
+      if (tamanhoEnvio > MAX_ENCODED_REQUEST_BYTES) throw new Error(`O envio codificado teria ${formatarBytes(tamanhoEnvio)} e excederia 10 MiB.`);
+      statusEl.textContent = `Reenviando PDF de ${formatarBytes(file.size)}; aguardando confirmação...`;
+      const resposta = await enviarPdfPorIframe(camposUpload);
+      if (!resposta.ok) throw new Error(resposta.error || 'O Drive recusou o arquivo.');
+      statusEl.textContent = `PDF confirmado no Drive (${formatarBytes(resposta.bytes || file.size)}). Registro: ${resposta.fileId || 'confirmado'}${resposta.duplicate ? ' (já estava salvo)' : ''}.`;
+      alert(resposta.duplicate ? 'O arquivo já estava no Drive. O recebimento foi confirmado.' : 'PDF enviado e confirmado no Drive.');
+    } catch (erro) {
+      console.error('Falha ao reenviar o PDF:', erro);
+      statusEl.textContent = `Reenvio não confirmado: ${erro.message}`;
+      alert(`O Drive não confirmou o reenvio. ${erro.message}`);
+    } finally {
+      isExporting = false;
+      document.getElementById('professionalPassword').value = '';
+      botao.disabled = false;
+    }
+  }
+
   async function exportToPDF() {
     const rawNome = form.elements.nome_paciente?.value?.trim();
     if (!rawNome) {
@@ -520,6 +593,10 @@
       return;
     }
     if (isExporting) return;
+    if (!validarOrigemHospedada()) {
+      alert('Abra o formulário pelo endereço HTTPS publicado no GitHub Pages. Não gere o PDF a partir do arquivo local file:/// porque o Apps Script não consegue validar essa origem.');
+      return;
+    }
     if (!validarConfiguracao()) {
       alert('Configure a URL /exec do Apps Script antes de publicar.');
       return;
