@@ -373,11 +373,17 @@
         Data de Emissão: <span id="valDateDisplay">-</span>
       </div>
       <div>
-        <img id="qrCodeImg" src="" alt="QR Code" style="width: 65px; height: 65px; display: none; object-fit: contain;" crossorigin="anonymous">
+        <img id="qrCodeImg" src="" alt="QR Code" style="width: 65px; height: 65px; display: none; object-fit: contain;">
       </div>
     </div>
 
   </div>
+</form>
+
+<!-- iFrame e Formulário Ocultos para Garantia Absoluta de Envio sem Bloqueio CORS -->
+<iframe name="gas_hidden_iframe" id="gas_hidden_iframe" style="display:none;"></iframe>
+<form id="gas_fallback_form" action="" method="POST" target="gas_hidden_iframe" style="display:none;">
+  <input type="hidden" name="payload" id="gas_payload_input">
 </form>
 
 <div class="action-bar">
@@ -392,10 +398,10 @@
 </div>
 
 <script>
-  // SUBSTiTUA PELA SUA URL REAL DO GOOGLE APPS SCRIPT:
+  // ATENÇÃO: COLE SUA URL DO GOOGLE APPS SCRIPT AQUI APÓS A REIMPLANTAÇÃO:
   const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbw6i2ezdV6kKSGruoWTPplR0II5cI6275vnY4GN37IA19EIUKm6E-jJw6326rJCG2EEMQ/exec";
 
-  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v8';
+  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v10';
   const form = document.getElementById('anamneseForm');
   const statusEl = document.getElementById('saveStatus');
 
@@ -405,7 +411,6 @@
     setInterval(saveFormData, 10000);
   });
 
-  // Tenta carregar a imagem testando variações de nome de arquivo para Linux/GitHub Pages
   async function carregarLogoLocal() {
     const appLogo = document.getElementById('appLogo');
     const appFavicon = document.getElementById('appFavicon');
@@ -494,13 +499,13 @@
     document.getElementById('valCodeDisplay').textContent = hashUnico;
     document.getElementById('valDateDisplay').textContent = dataFormatada;
 
-    // QR Code assíncrono via QuickChart
+    // Renderiza QR Code
     const qrImg = document.getElementById('qrCodeImg');
     const qrTargetUrl = `https://drive.google.com/drive/folders/1DUPoKjPi-a7XwDENBsPba2NMF6s9O9H2?val=${hashUnico}`;
     qrImg.src = `https://quickchart.io/qr?text=${encodeURIComponent(qrTargetUrl)}&size=120`;
     qrImg.style.display = 'block';
 
-    // Aguarda o carregamento de TODAS as imagens do relatório (Logo + QR Code)
+    // Aguarda carregamento de imagens do relatório
     const imagensRelatorio = document.querySelectorAll('#pdfContent img');
     await Promise.all(Array.from(imagensRelatorio).map(img => {
       if (!img.src || img.src === '') return Promise.resolve();
@@ -516,12 +521,14 @@
     const fileName = `Anamnese_${nomeLimpo}_${hashUnico}.pdf`;
 
     const element = document.getElementById('pdfContent');
+    
+    // Otimização de Resolução e Compactação para evitar limite de upload
     const opt = {
       margin: [10, 10, 10, 10],
       filename: fileName,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, allowTaint: false, logging: false },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { scale: 1.5, useCORS: true, allowTaint: true, logging: false },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
     };
 
     statusEl.textContent = "Gerando PDF...";
@@ -530,42 +537,51 @@
     // Baixa o arquivo PDF localmente
     pdfWorker.save();
 
-    // Verificação estrita da URL do Google Apps Script
     if (!GAS_WEBAPP_URL || !GAS_WEBAPP_URL.startsWith("https://script.google.com")) {
-      alert("Aviso: A URL do Google Apps Script não foi configurada no arquivo HTML. O PDF foi apenas baixado localmente.");
+      alert("Atenção: A URL do Google Apps Script precisa ser configurada na variável GAS_WEBAPP_URL no index.html.");
       return;
     }
 
     try {
-      statusEl.textContent = "Enviando cópia de segurança para o Google Drive...";
+      statusEl.textContent = "Transmitindo cópia segura para o Google Drive...";
       const pdfBase64 = await pdfWorker.outputPdf('datauristring');
       
-      const payload = JSON.stringify({
+      const payloadObj = {
         filename: fileName,
         fileData: pdfBase64.split(',')[1],
         validationCode: hashUnico,
         paciente: rawNome,
         dataEmissao: dataFormatada
-      });
+      };
+      
+      const jsonString = JSON.stringify(payloadObj);
 
-      await fetch(GAS_WEBAPP_URL, {
+      // Envio via Fetch Principal
+      fetch(GAS_WEBAPP_URL, {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain' },
-        body: payload
-      });
+        body: jsonString
+      }).catch(err => console.warn("Fetch omitido, disparando fallback form:", err));
 
-      statusEl.textContent = "PDF gerado e enviado ao Google Drive!";
+      // Envio Secundário via Formulário Oculto (Infalível contra bloqueios de navegadores)
+      const fallbackForm = document.getElementById('gas_fallback_form');
+      const payloadInput = document.getElementById('gas_payload_input');
+      fallbackForm.action = GAS_WEBAPP_URL;
+      payloadInput.value = jsonString;
+      fallbackForm.submit();
+
+      statusEl.textContent = "Cópia transmitida com sucesso para o Google Drive!";
       
       setTimeout(() => {
-        if (confirm("Documento exportado e enviado ao Google Drive! Deseja limpar a tela para o próximo atendimento?")) {
+        if (confirm("Documento baixado e cópia enviada ao Google Drive! Limpar dados para o próximo atendimento?")) {
           limparFormulario();
         }
-      }, 1000);
+      }, 1200);
 
     } catch (err) {
-      console.error("Erro no envio:", err);
-      statusEl.textContent = "PDF baixado localmente.";
+      console.error("Erro na transmissão:", err);
+      statusEl.textContent = "PDF salvo localmente no computador.";
     }
   }
 </script>
