@@ -95,7 +95,7 @@
         <div class="header-subtitle">Documento Transdisciplinar</div>
       </div>
       <div class="logo-container">
-        <img id="appLogo" src="LOGO.png" alt="Espaço Integrar" class="logo-img">
+        <img id="appLogo" src="logo.png" alt="Espaço Integrar" class="logo-img">
       </div>
     </div>
 
@@ -365,6 +365,18 @@
       </div>
     </div>
 
+    <!-- Rodapé de Validação Digital com Imagem QR do QuickChart -->
+    <div style="margin-top: 30px; padding-top: 15px; border-top: 1px dashed #cbd5e1; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #64748b;">
+      <div>
+        <strong>Espaço Integrar - Autenticidade do Documento</strong><br>
+        Código de Validação: <span id="valCodeDisplay" style="font-family: monospace; font-weight: bold; color: #0f172a;">-</span><br>
+        Data de Emissão: <span id="valDateDisplay">-</span>
+      </div>
+      <div>
+        <img id="qrCodeImg" src="" alt="QR Code" style="width: 65px; height: 65px; display: none; object-fit: contain;">
+      </div>
+    </div>
+
   </div>
 </form>
 
@@ -380,20 +392,14 @@
 </div>
 
 <script>
-  const LOGO_PATH = "logo.png"; 
-  
-  // COLE SUA URL DO GOOGLE APPS SCRIPT AQUI APÓS A IMPLANTAÇÃO:
+  // COLE AQUI A URL DO SEU GOOGLE APPS SCRIPT
   const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbw6i2ezdV6kKSGruoWTPplR0II5cI6275vnY4GN37IA19EIUKm6E-jJw6326rJCG2EEMQ/exec";
 
-  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v3';
+  const FORM_STORAGE_KEY = 'anamnese_espaco_integrar_v5';
   const form = document.getElementById('anamneseForm');
   const statusEl = document.getElementById('saveStatus');
 
   document.addEventListener("DOMContentLoaded", () => {
-    if (LOGO_PATH) {
-      document.getElementById('appFavicon').href = LOGO_PATH;
-      document.getElementById('appLogo').src = LOGO_PATH;
-    }
     loadFormData();
     setInterval(saveFormData, 10000);
   });
@@ -441,64 +447,95 @@
   }
 
   function limparFormulario() {
-    if (confirm("Deseja limpar todos os dados da tela para proteger a privacidade do paciente anterior?")) {
+    if (confirm("Deseja limpar a tela para o próximo atendimento?")) {
       localStorage.removeItem(FORM_STORAGE_KEY);
       form.reset();
-      statusEl.textContent = "Sessão limpa com segurança.";
+      document.getElementById('valCodeDisplay').textContent = '-';
+      document.getElementById('valDateDisplay').textContent = '-';
+      const qrImg = document.getElementById('qrCodeImg');
+      qrImg.src = '';
+      qrImg.style.display = 'none';
+      statusEl.textContent = "Sessão limpa.";
     }
   }
 
   async function exportToPDF() {
     saveFormData();
-    
-    // Sanitização de nome para evitar caracteres inválidos e injeção de caminho
+
+    const now = new Date();
+    const hashUnico = 'EI-' + Date.now().toString(36).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
+    const dataFormatada = now.toLocaleString('pt-BR');
+
+    document.getElementById('valCodeDisplay').textContent = hashUnico;
+    document.getElementById('valDateDisplay').textContent = dataFormatada;
+
+    // Gerador de QR Code assíncrono garantido via QuickChart
+    const qrImg = document.getElementById('qrCodeImg');
+    const qrTargetUrl = `https://drive.google.com/drive/folders/1DUPoKjPi-a7XwDENBsPba2NMF6s9O9H2?val=${hashUnico}`;
+    qrImg.src = `https://quickchart.io/qr?text=${encodeURIComponent(qrTargetUrl)}&size=120`;
+    qrImg.style.display = 'block';
+
+    // Aguarda o carregamento da imagem do QR Code
+    await new Promise((resolve) => {
+      if (qrImg.complete) {
+        resolve();
+      } else {
+        qrImg.onload = resolve;
+        qrImg.onerror = resolve; // Continua se falhar o carregamento da API
+      }
+    });
+
     const rawNome = form.elements['nome_paciente']?.value || 'Paciente_Sem_Nome';
     const nomeLimpo = rawNome.trim().replace(/[^a-zA-Z0-9_ -]/g, "").replace(/\s+/g, '_');
-    const fileName = `Anamnese_${nomeLimpo}_${Date.now()}.pdf`;
+    const fileName = `Anamnese_${nomeLimpo}_${hashUnico}.pdf`;
 
     const element = document.getElementById('pdfContent');
     const opt = {
       margin: [10, 10, 10, 10],
       filename: fileName,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
+      html2canvas: { scale: 2, useCORS: true, allowTaint: true },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
     statusEl.textContent = "Gerando PDF...";
     const pdfWorker = html2pdf().set(opt).from(element);
     
-    // Baixa o arquivo PDF localmente
+    // Baixa o PDF no computador
     pdfWorker.save();
 
-    // Envio seguro para o Google Drive
     if (GAS_WEBAPP_URL && GAS_WEBAPP_URL.startsWith("https://script.google.com")) {
       try {
-        statusEl.textContent = "Enviando com segurança ao Google Drive...";
+        statusEl.textContent = "Enviando cópia de segurança para o Google Drive...";
         const pdfBase64 = await pdfWorker.outputPdf('datauristring');
         
+        const payload = JSON.stringify({
+          filename: fileName,
+          fileData: pdfBase64.split(',')[1],
+          validationCode: hashUnico,
+          paciente: rawNome,
+          dataEmissao: dataFormatada
+        });
+
+        // Envio assíncrono seguro em modo no-cors para contornar restrições do GitHub Pages
         await fetch(GAS_WEBAPP_URL, {
           method: 'POST',
           mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename: fileName,
-            fileData: pdfBase64.split(',')[1]
-          })
+          headers: { 'Content-Type': 'text/plain' },
+          body: payload
         });
 
-        statusEl.textContent = "PDF salvo no Google Drive com sucesso!";
+        statusEl.textContent = "PDF gerado e enviado ao Google Drive com sucesso!";
         
-        // Limpeza LGPD automática
         setTimeout(() => {
-          if (confirm("Documento salvo! Deseja limpar os dados da tela para o próximo atendimento?")) {
+          if (confirm("Documento exportado e enviado ao Google Drive! Deseja limpar a tela para o próximo atendimento?")) {
             limparFormulario();
           }
         }, 1000);
 
       } catch (err) {
-        console.error("Erro no envio ao Drive:", err);
-        statusEl.textContent = "Erro ao enviar para o Drive. Verifique a conexão.";
+        console.error("Erro no envio:", err);
+        statusEl.textContent = "PDF baixado localmente (falha na sincronização do Drive).";
       }
     }
   }
